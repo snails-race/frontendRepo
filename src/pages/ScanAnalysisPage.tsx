@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import s from './ScanAnalysisPage.module.css';
 
 /* ── helpers ── */
@@ -86,7 +85,6 @@ function makeRadialNodes() {
 
 /* ━━━━━━━━━━━━ Component ━━━━━━━━━━━━ */
 export default function ScanAnalysisPage() {
-  const navigate = useNavigate();
   const [view, setView] = useState<'loading' | 'results'>('loading');
   const [progress, setProgress] = useState(0);
   const [stepText, setStepText] = useState(STEPS[0]);
@@ -425,7 +423,7 @@ export default function ScanAnalysisPage() {
               <h1 className={s.resultsTitle}>Analysis Report</h1>
               <p className={s.resultsSubtitle}>Video Evidence 73A &bull; Analyzed in 4.2s</p>
             </div>
-            <button className={s.newAnalysisBtn} onClick={() => navigate('/')}>
+            <button className={s.newAnalysisBtn} onClick={resetAnalysis}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
                 <path d="M21 3v5h-5" />
