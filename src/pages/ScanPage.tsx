@@ -1,5 +1,6 @@
 import Navbar from '../components/common/Navbar';
 import Container from '../components/common/Container';
+import BackendHealthCheck from '../components/common/BackendHealthCheck';
 import ParticleCanvas from '../components/scan/ParticleCanvas';
 import ScanInput from '../components/scan/ScanInput';
 import styles from './ScanPage.module.css';
@@ -31,6 +32,7 @@ export default function ScanPage() {
           </svg>
           판별 결과와 '그 이유'까지 설명합니다
         </div>
+        <BackendHealthCheck />
       </Container>
 
       <footer className={styles.footer}>
