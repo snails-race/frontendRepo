@@ -1,4 +1,15 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://43.200.145.225';
+const DEFAULT_API_BASE_URL = 'http://43.200.145.225';
+const VERCEL_API_PROXY_URL = '/api/backend';
+
+function getApiBaseUrl() {
+  const configuredUrl = import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL;
+
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:' && configuredUrl.startsWith('http:')) {
+    return VERCEL_API_PROXY_URL;
+  }
+
+  return configuredUrl;
+}
 
 export type HealthCheckResult = {
   ok: boolean;
@@ -7,7 +18,7 @@ export type HealthCheckResult = {
 };
 
 async function checkHealth(path: string, errorMessage: string): Promise<HealthCheckResult> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
     method: 'GET',
     headers: {
       Accept: 'application/json, text/plain, */*',
