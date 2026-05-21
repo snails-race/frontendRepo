@@ -1,4 +1,4 @@
-const DEFAULT_GATEWAY_API_BASE_URL = 'http://43.200.145.225';
+const DEFAULT_GATEWAY_API_BASE_URL = "";
 const DEFAULT_AUTH_API_BASE_URL = DEFAULT_GATEWAY_API_BASE_URL;
 const DEFAULT_USER_API_BASE_URL = DEFAULT_GATEWAY_API_BASE_URL;
 const DEFAULT_VIDEO_API_BASE_URL = DEFAULT_GATEWAY_API_BASE_URL;
@@ -62,7 +62,7 @@ export type UserProfile = {
   raw: unknown;
 };
 
-export type VideoAnalysisType = 'DEEPFAKE' | 'T2V';
+export type VideoAnalysisType = 'DEEPFAKE' | 'T2V' | 'RYZE' | 'LEE_SIN' | 'SHEN' | 'RAMMUS';
 
 export type PresignedUploadResponse = {
   uploadUrl: string;
@@ -72,7 +72,7 @@ export type PresignedUploadResponse = {
 export type VideoStatus = 'queued' | 'pending' | 'analyzing' | 'processing' | 'completed' | 'failed' | string;
 
 export type SuspiciousFrame = {
-  frameIndex: number;
+  frameIndex: number; time?: string;
   probability?: number;
 };
 
@@ -84,6 +84,12 @@ export type AnalysisResult = {
   suspicious_frames: SuspiciousFrame[];
   xai_heatmap_url?: string;
   per_frame_probs?: number[];
+  analysis_type?: string; engine_label?: string;
+  original_face_url?: string;
+  rgb_contribution?: number;
+  freq_contribution?: number;
+  top_regions?: {region: string, ratio: number}[];
+  forensic_report?: string;
   raw: unknown;
 };
 
@@ -339,6 +345,12 @@ function normalizeAnalysisResult(raw: unknown): AnalysisResult {
       readString(heatmaps?.v7) ??
       readString(t2vFirstHeatmap?.overlay_url),
     per_frame_probs: toNumberArray(readFirst(root, ['perFrameProbs', 'per_frame_probs']) ?? deepfake.per_frame_probs),
+    analysis_type: readString(readFirst(root, ['analysis_type'])), engine_label: readString(readFirst(root, ['engine_label'])),
+    original_face_url: readString(readFirst(root.raw || {}, ['original_face_url'])),
+    rgb_contribution: readNumber(readFirst(root.raw || {}, ['rgb_contribution'])),
+    freq_contribution: readNumber(readFirst(root.raw || {}, ['freq_contribution'])),
+    top_regions: readFirst(root.raw || {}, ['top_regions']) as any,
+    forensic_report: readString(readFirst(root.raw || {}, ['forensic_report'])),
     raw,
   };
 }
@@ -382,7 +394,8 @@ function readSuspiciousFrames(root: Record<string, unknown>, evidence: Record<st
         return {
           frameIndex,
           probability: readNumber(record?.probability ?? record?.prob ?? record?.score),
-        };
+          time: typeof record?.time === 'string' ? record.time : undefined,
+        } as SuspiciousFrame;
       })
       .filter((item): item is SuspiciousFrame => item !== undefined);
   }

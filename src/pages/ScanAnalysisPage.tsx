@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { AnalysisResult } from '../lib/api';
 import { useVideoStore } from '../stores/videoStore';
@@ -50,7 +51,7 @@ function makeTableData() {
 
 /* ── Topography bar data generator ── */
 function makeTopoData(n = 120) {
-  const bars: { height: number; isAnomalous: boolean }[] = [];
+  const bars: { height: number; isAnomalous: boolean; timeLabel?: string }[] = [];
   for (let i = 0; i < n; i++) {
     let h = 10 + Math.random() * 20;
     if (i > 50 && i < 100) {
@@ -59,16 +60,24 @@ function makeTopoData(n = 120) {
       h += spike * 60 + Math.random() * 20;
     }
     h = Math.min(95, h);
-    bars.push({ height: h, isAnomalous: h > 75 });
+    bars.push({ height: h, isAnomalous: h > 75, timeLabel: (i * 0.1).toFixed(1) + "s" });
   }
   return bars;
 }
 
 function makeTopoDataFromResult(result: AnalysisResult | null) {
   if (!result?.per_frame_probs?.length) return makeTopoData();
-  return result.per_frame_probs.map((prob) => {
-    const height = Math.max(5, Math.min(95, prob * 100));
-    return { height, isAnomalous: prob >= 0.75 };
+  const threshold = (result.raw as any)?.threshold ?? 0.11;
+  return result.per_frame_probs.map((prob, index) => {
+    let anomalyIndex = 0;
+    if (prob >= threshold) {
+        const ratio = Math.min(1, (prob - threshold) / (1 - threshold));
+        anomalyIndex = 88.5 + (ratio * 11.4); 
+    } else {
+        const ratio = Math.max(0, prob / threshold); anomalyIndex = 12.4 + (ratio * 50.1);
+    }
+    const height = Math.max(5, Math.min(95, anomalyIndex));
+    return { height, isAnomalous: prob >= threshold, timeLabel: (result.suspicious_frames[index] as any)?.time || (index * 1.0).toFixed(1) + "s" };
   });
 }
 
@@ -77,7 +86,7 @@ function makeTableDataFromResult(result: AnalysisResult | null) {
 
   if (result.suspicious_frames.length) {
     return result.suspicious_frames.map((frame) => ({
-      time: `frame ${frame.frameIndex}`,
+      time: (frame as any).time || "frame " + frame.frameIndex,
       frameId: `FRM-${frame.frameIndex}`,
       vector: 'XAI.HEATMAP',
       classification: result.final_verdict.toUpperCase(),
@@ -92,7 +101,7 @@ function makeTableDataFromResult(result: AnalysisResult | null) {
       time: `00:00:${(index * 0.1).toFixed(3).padStart(6, '0')}`,
       frameId: `FRM-${index}`,
       vector: 'PER_FRAME',
-      classification: prob >= 0.75 ? 'ANOMALY' : 'NORMAL',
+      classification: prob >= ((result.raw as any)?.threshold ?? 0.081) ? 'ANOMALY' : 'NORMAL',
       score: prob,
       variance: Math.abs(prob - 0.5),
       isPositive: prob >= 0.5,
@@ -103,32 +112,14 @@ function makeTableDataFromResult(result: AnalysisResult | null) {
 }
 
 /* ── Radial node data ── */
-function makeRadialNodes() {
-  const nodes: { x: number; y: number; size: number; blue: boolean; angle: number; radius: number }[] = [];
-  const lines: { angle: number; radius: number }[] = [];
-  [25, 50, 75, 100].forEach((ringSize) => {
-    const r = ringSize / 2;
-    const count = Math.floor(ringSize * 0.5);
-    for (let i = 0; i < count; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const x = 50 + r * Math.cos(angle);
-      const y = 50 + r * Math.sin(angle);
-      const isAnomalous = ringSize >= 75 && Math.random() > 0.4;
-      nodes.push({ x, y, size: isAnomalous ? 6 : 4, blue: isAnomalous, angle, radius: r });
-      if (isAnomalous && Math.random() > 0.5) {
-        lines.push({ angle, radius: r });
-      }
-    }
-  });
-  return { nodes, lines };
-}
+// function makeRadialNodes removed
 
 /* ━━━━━━━━━━━━ Component ━━━━━━━━━━━━ */
 export default function ScanAnalysisPage() {
   const [view, setView] = useState<'loading' | 'results'>('loading');
   const [progress, setProgress] = useState(0);
   const [stepText, setStepText] = useState(STEPS[0]);
-  const {
+  const { submitVideoUrl,
     currentVideoId,
     targetLabel,
     status,
@@ -159,8 +150,8 @@ export default function ScanAnalysisPage() {
   const [topoData, setTopoData] = useState<ReturnType<typeof makeTopoData>>([]);
   const [topoAnimated, setTopoAnimated] = useState(false);
   const [tableData, setTableData] = useState<ReturnType<typeof makeTableData>>([]);
-  const [radialData, setRadialData] = useState<ReturnType<typeof makeRadialNodes>>({ nodes: [], lines: [] });
-  const [radialExpanded, setRadialExpanded] = useState(false);
+  // Removed radialData
+  // Removed radialExpanded
 
   /* ── Matrix scanner interval ── */
   useEffect(() => {
@@ -325,16 +316,26 @@ export default function ScanAnalysisPage() {
     cancelAnimationFrame(graphAnimRef.current);
     setTopoData(makeTopoDataFromResult(resultOverride));
     setTableData(makeTableDataFromResult(resultOverride));
-    setRadialData(makeRadialNodes());
-    setRadialExpanded(false);
+    // setRadialData(makeRadialNodes());
+    // setRadialExpanded(false);
     setTopoAnimated(false);
     setView('results');
 
     setTimeout(() => {
       setTopoAnimated(true);
-      setRadialExpanded(true);
+      // setRadialExpanded(true);
     }, 300);
   }
+
+  
+  const handleRerun = async (newModel: string) => {
+    if (!targetLabel) return;
+    const currentLabel = targetLabel;
+    resetAnalysis();
+    try {
+      await submitVideoUrl(currentLabel, newModel as any);
+    } catch (e) { console.error(e); }
+  };
 
   function resetAnalysis() {
     resetVideoAnalysis();
@@ -348,24 +349,36 @@ export default function ScanAnalysisPage() {
 
   const pctStr = `${Math.floor(progress)}%`;
   const targetName = targetLabel ?? 'video_evidence_73A.mp4';
-  const primaryScore = result?.deepfake_score ?? result?.t2v_score ?? 94;
-  const scoreText = `${Math.round(primaryScore)}%`;
+  const isT2V = result?.analysis_type === 'T2V';
+  const t2vScore = ((result?.t2v_score ?? 0) / 100).toFixed(2);
+  
   const verdict = result?.final_verdict ?? 'AI GENERATED';
+  const scoreText = verdict === 'FAKE' ? 'CRITICAL' : 'SECURE';
   const verdictText = verdict.toUpperCase();
-  const t2vScore = result?.t2v_score !== undefined ? (result.t2v_score / 100).toFixed(2) : '0.84';
+  const rawScore = (result?.raw as any)?.score ?? ((result?.deepfake_score ?? 94) / 100);
+  const threshold = (result?.raw as any)?.threshold ?? 0.081;
+  let anomalyIndex = 0;
+  if (rawScore >= threshold) {
+      const ratio = Math.min(1, (rawScore - threshold) / (1 - threshold));
+      anomalyIndex = 88.5 + (ratio * 11.4);
+  } else {
+      const ratio = Math.max(0, rawScore / threshold);
+      anomalyIndex = 12.4 + (ratio * 35.1);
+  }
+  const displayIndex = anomalyIndex.toFixed(1);
   const suspiciousCount = result?.suspicious_frames.length;
 
   return (
     <div className={s.page}>
       {/* ── Header ── */}
       <header className={s.header}>
-        <div className={s.logoWrap}>
+        <Link to="/" className={s.logoWrap} style={{ textDecoration: "none", color: "inherit", cursor: "pointer" }}>
           <svg viewBox="0 0 24 24" fill="none" className={s.logoIcon}>
             <circle cx="9" cy="12" r="7" stroke="currentColor" strokeWidth="2" />
             <circle cx="15" cy="12" r="7" stroke="currentColor" strokeWidth="2" strokeDasharray="4 4" />
           </svg>
-          Solomon AI
-        </div>
+          Solomon AI 
+        </Link>
         <div className={s.headerMeta}>
           <div className={s.metaItem}>
             <span className={s.metaLabel}>Target</span>
@@ -522,8 +535,33 @@ export default function ScanAnalysisPage() {
             <div>
               <h1 className={s.resultsTitle}>Analysis Report</h1>
               <p className={s.resultsSubtitle}>
-                {targetName} &bull; {result?.xai_heatmap_url ? 'XAI heatmap available' : 'Analyzed report'}
+                {targetName} • {result?.engine_label || "Standard Engine"} • {result?.xai_heatmap_url ? "XAI forensic evidence available" : "Analyzed report"}
               </p>
+            </div>
+            
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.05em' }}>SWAP ENGINE:</span>
+              <div style={{ display: 'flex', background: 'rgba(0,0,0,0.05)', padding: '3px', borderRadius: '999px', border: '1px solid var(--border-light)' }}>
+                {['RYZE', 'LEE_SIN', 'SHEN', 'RAMMUS'].map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => handleRerun(m)}
+                    style={{
+                      padding: '5px 12px',
+                      fontSize: '0.65rem',
+                      borderRadius: '999px',
+                      border: 'none',
+                      background: result?.engine_label?.includes(m) ? 'var(--accent-blue)' : 'transparent',
+                      color: result?.engine_label?.includes(m) ? '#fff' : 'var(--text-main)',
+                      cursor: 'pointer',
+                      fontWeight: 700,
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
             </div>
             <button className={s.newAnalysisBtn} onClick={resetAnalysis}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -545,30 +583,30 @@ export default function ScanAnalysisPage() {
                   <span className={`${s.statIndex} ${s.statIndexWhite}`}>01</span>
                 </div>
                 <div>
-                  <div className={s.statBigValue}>{scoreText}</div>
+                  <div className={s.statBigValue} style={{ fontSize: "2.5rem", color: verdict === "FAKE" ? "#ff4444" : "#44ff44" }}>{scoreText}</div>
                   <div className={s.statDesc}>{verdictText}</div>
                 </div>
               </div>
               {/* Temporal */}
               <div className={s.statCard}>
                 <div className={s.statTop}>
-                  <span className={s.statLabel}>Temporal Inconsistency</span>
+                  <span className={s.statLabel}>{isT2V ? "Generative AI (T2V) Score" : "Deepfake Anomaly Index"}</span>
                   <span className={`${s.statIndex} ${s.statIndexMuted}`}>02</span>
                 </div>
                 <div>
-                  <div className={`${s.statBigValue} ${s.statBigValue4xl}`}>{t2vScore}</div>
-                  <div className={s.statDescMuted}>T2V probability score</div>
+                  <div className={`${s.statBigValue} ${s.statBigValue4xl}`}>{isT2V ? t2vScore : displayIndex}</div>
+                  <div className={s.statDescMuted}>{isT2V ? "Frequency deviation probability" : "Normalized artifact severity (0-100)"}</div>
                 </div>
               </div>
               {/* Spatial */}
               <div className={s.statCard}>
                 <div className={s.statTop}>
-                  <span className={s.statLabel}>Spatial Artifacts</span>
+                  <span className={s.statLabel}>{isT2V ? "Temporal Inconsistency" : "Facial Texture Analysis"}</span>
                   <span className={`${s.statIndex} ${s.statIndexMuted}`}>03</span>
                 </div>
                 <div>
                   <div className={`${s.statBigValue} ${s.statBigValue4xl}`}>{suspiciousCount ?? '12.4k'}</div>
-                  <div className={s.statDescMuted}>Suspicious frame candidates</div>
+                  <div className={s.statDescMuted}>{isT2V ? "Suspicious inter-frame changes" : "Analyzed Artifact Regions"}</div>
                 </div>
               </div>
               {/* System Load */}
@@ -601,8 +639,8 @@ export default function ScanAnalysisPage() {
               <div className={s.topoContainer}>
                 <div className={s.topoDashLine} style={{ bottom: '25%' }} />
                 <div className={s.topoDashLine} style={{ bottom: '50%' }} />
-                <div className={`${s.topoDashLine} ${s.topoDashLineThreshold}`} style={{ bottom: '75%' }}>
-                  <span className={s.topoThresholdLabel}>THRESHOLD (0.75)</span>
+                <div className={`${s.topoDashLine} ${s.topoDashLineThreshold}`} style={{ bottom: '88.5%' }}>
+                  <span className={s.topoThresholdLabel}>THRESHOLD (CRITICAL)</span>
                 </div>
                 {topoData.map((bar, i) => (
                   <div
@@ -610,59 +648,65 @@ export default function ScanAnalysisPage() {
                     className={`${s.topoBar} ${bar.isAnomalous ? s.topoBarBlue : ''}`}
                     style={{ height: topoAnimated ? `${bar.height}%` : '0%', transitionDelay: `${i * 10}ms` }}
                   >
-                    {i % 15 === 0 && <span className={s.topoBarLabel}>{(i * 0.1).toFixed(1)}s</span>}
+                    {(i === 0 || i === Math.floor((topoData.length - 1) / 2) || i === topoData.length - 1) && <span className={s.topoBarLabel}>{bar.timeLabel}</span>}
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Radial chart */}
-            <div className={s.radialCell}>
-              <div className={s.radialHeader}>
-                <span className={s.radialSectionLabel}>Micro Distribution</span>
-                <div className={s.radialTitle}>Facial Landmark Deviations</div>
+            {/* Advanced XAI Cell */}
+            <div className={s.radialCell} style={{ display: 'flex', flexDirection: 'column', padding: '24px', gridRow: 'span 2', height: '360px', overflowY: 'auto' }}>
+              <div className={s.radialHeader} style={{ marginBottom: '16px' }}>
+                <span className={s.radialSectionLabel}>Advanced Forensic XAI</span>
+                <div className={s.radialTitle}>Multi-modal AI Evidence</div>
               </div>
-              <div className={s.radialArea}>
-                <div className={s.radialContainer}>
-                  <div className={`${s.radialRing} ${s.radialRing100}`} />
-                  <div className={`${s.radialRing} ${s.radialRing75}`} />
-                  <div className={`${s.radialRing} ${s.radialRing50}`} />
-                  <div className={`${s.radialRing} ${s.radialRing25}`} />
-                  <div className={s.radialCenter} />
-                  {radialData.lines.map((line, i) => (
-                    <div
-                      key={`line-${i}`}
-                      className={s.radialLine}
-                      style={{
-                        transform: `rotate(${line.angle}rad)`,
-                        width: radialExpanded ? `${line.radius}%` : '0%',
-                      }}
-                    />
-                  ))}
-                  {radialData.nodes.map((node, i) => (
-                    <div
-                      key={`node-${i}`}
-                      className={s.radialNode}
-                      style={{
-                        left: radialExpanded ? `${node.x}%` : '50%',
-                        top: radialExpanded ? `${node.y}%` : '50%',
-                        width: node.size,
-                        height: node.size,
-                        backgroundColor: node.blue ? 'var(--accent-blue)' : 'var(--text-main)',
-                        opacity: Math.random() > 0.3 ? 1 : 0.4,
-                      }}
-                    />
-                  ))}
+              
+              {/* 3. Side-by-Side Images */}
+              <div style={{ display: 'flex', gap: '12px', height: '220px', marginBottom: '20px' }}>
+                <div style={{ flex: 1, backgroundColor: '#000', borderRadius: '8px', overflow: 'hidden', position: 'relative' }}>
+                  <div style={{ position: 'absolute', top: 4, left: 8, fontSize: '0.7rem', color: '#fff', background: 'rgba(0,0,0,0.5)', padding: '2px 6px', borderRadius: '4px' }}>Original Target</div>
+                  {result?.original_face_url && <img src={result.original_face_url} alt="Original" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                </div>
+                <div style={{ flex: 1, backgroundColor: '#000', borderRadius: '8px', overflow: 'hidden', position: 'relative' }}>
+                  <div style={{ position: 'absolute', top: 4, left: 8, fontSize: '0.7rem', color: '#fff', background: 'rgba(0,0,0,0.5)', padding: '2px 6px', borderRadius: '4px' }}>GradCAM Heatmap</div>
+                  {result?.xai_heatmap_url && <img src={result.xai_heatmap_url} alt="Heatmap" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
                 </div>
               </div>
-              <div className={s.radialFooter}>
-                <span>Core Features</span>
-                <span>Periphery Features</span>
+
+              {/* 1. RGB vs Freq Contribution */}
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ fontSize: '0.85rem', color: '#aaa', marginBottom: '8px', fontWeight: 600 }}>Feature Contribution Analysis</div>
+                <div style={{ display: 'flex', height: '10px', background: '#333', borderRadius: '5px', overflow: 'hidden' }}>
+                  <div style={{ width: (result?.rgb_contribution ?? 50) + '%', background: '#4a90e2' }}></div>
+                  <div style={{ width: (result?.freq_contribution ?? 50) + '%', background: '#a04ae2' }}></div>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginTop: '4px', color: '#888' }}>
+                  <span><span style={{color: '#4a90e2'}}>■</span> Spatial Textures ({Number(result?.rgb_contribution ?? 50).toFixed(1)}%)</span>
+                  <span><span style={{color: '#a04ae2'}}>■</span> Frequency Specs ({Number(result?.freq_contribution ?? 50).toFixed(1)}%)</span>
+                </div>
+              </div>
+
+              {/* 2. Top Regions */}
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ fontSize: '0.85rem', color: '#aaa', marginBottom: '8px', fontWeight: 600 }}>Critical Region Matrix (Top 2)</div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {result?.top_regions?.map((r, i) => (
+                    <span key={i} style={{ background: 'rgba(255, 68, 68, 0.15)', color: '#ff6b6b', padding: '6px 10px', borderRadius: '4px', fontSize: '0.8rem', border: '1px solid rgba(255,68,68,0.3)' }}>
+                      ⚠️ {r.region} <strong>({Math.round(r.ratio * 100)}%)</strong>
+                    </span>
+                  ))}
+                  {!result?.top_regions && <span style={{color: '#666', fontSize: '0.8rem'}}>Calculating regions...</span>}
+                </div>
+              </div>
+
+              {/* 4. Forensic Report */}
+              <div style={{ marginTop: '20px', padding: '18px', background: verdict === 'FAKE' ? '#fff1f0' : '#f6ffed', border: '1px solid ' + (verdict === 'FAKE' ? '#ffa39e' : '#b7eb8f'), borderLeft: '5px solid ' + (verdict === 'FAKE' ? '#ff4d4f' : '#52c41a'), borderRadius: '8px', fontSize: '0.9rem', color: verdict === 'FAKE' ? '#820014' : '#135200', lineHeight: '1.6', fontWeight: '500', wordBreak: 'keep-all' }}>
+                {result?.forensic_report || 'Generating forensic summary...'}
               </div>
             </div>
 
             {/* Data table */}
-            <div className={s.tableCell}>
+            <div className={s.tableCell} style={{ gridColumn: "span 12", height: "300px", overflowY: "auto" }}>
               <table className={s.dataTable}>
                 <thead>
                   <tr>
@@ -678,10 +722,10 @@ export default function ScanAnalysisPage() {
                   {tableData.map((row, i) => (
                     <tr key={i}>
                       <td className={s.tdMuted}>{row.time}</td>
-                      <td>{row.frameId}</td>
+                      <td style={{fontFamily: "monospace"}}>{row.frameId}</td>
                       <td className={s.tdMuted}>{row.vector}</td>
-                      <td>{row.classification}</td>
-                      <td className={`${s.tdRight} ${row.score > 0.75 ? s.tdAnomaly : s.tdNormal}`}>
+                      <td><span style={{padding: "2px 6px", borderRadius: "4px", fontSize: "0.8em", backgroundColor: row.classification === "FAKE" ? "rgba(255,0,0,0.2)" : "rgba(0,255,0,0.2)", color: row.classification === "FAKE" ? "#ff6b6b" : "#6bff6b"}}>{row.classification}</span></td>
+                      <td className={`${s.tdRight} ${row.classification === 'ANOMALY' || row.classification === 'FAKE' ? s.tdAnomaly : s.tdNormal}`}>
                         {row.score.toFixed(4)}
                       </td>
                       <td className={`${s.tdRight} ${row.isPositive ? s.tdPositive : s.tdNegative}`}>
@@ -699,3 +743,5 @@ export default function ScanAnalysisPage() {
     </div>
   );
 }
+
+// Force build hash update: 1779368529736

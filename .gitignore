@@ -1,4 +1,18 @@
+# 파이썬 및 시스템 관련 파일 제외
+*.py
+*.log
+*.out
+*.tar
+*.txt
+*.md
+*.sh
+__pycache__/
 node_modules/
-dist/
-.env
-.DS_Store
+saved_models/
+dfdc_raw/
+ff_data/
+datasets/
+xai_results/
+xai_test/
+test_client/
+test_inputs/
